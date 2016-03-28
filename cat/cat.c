@@ -1,16 +1,38 @@
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <stdio.h>
 
 #define BUFFER_SIZE 256
-#define stdin 0
-#define stdout 1
 
 int main(int argc, char** argv) {
-    char buffer[BUFFER_SIZE];
-    int n;
+    int fd = open(argv[1], O_WRONLY | O_TRUNC | O_CREAT, 0666);
+    if (fd == -1) return -1;
 
-    while ( (n = read(stdin, buffer, BUFFER_SIZE)) > 0) {    
-        write(stdout, buffer, n);  
-    }
- 
+    char buffer[BUFFER_SIZE];
+    ssize_t n; 
+
+    while ( (n = read(STDIN_FILENO, buffer, BUFFER_SIZE)) != 0)  { 
+        if (n == -1) {
+            if (errno == EINTR) {
+                printf("EINTR!!!\n");
+                continue;
+            }
+            else return -1;    
+        }
+
+        int offset = 0;
+        while (offset != n) {
+            ssize_t m = write(fd, &buffer[offset], n - offset);
+            if (m == -1) {
+                if (errno == EINTR) continue;
+                else return errno;
+            }
+
+            offset += m;
+        }  
+    } 
+
+    close(fd);
     return 0;
 }
