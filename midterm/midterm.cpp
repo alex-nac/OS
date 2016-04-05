@@ -9,6 +9,9 @@
 
 #define BUFFER_SIZE 256
 
+bool done = false;
+pid_t current_pgid = -1;
+
 std::string process_input() {
     char buffer[BUFFER_SIZE];
     ssize_t n; 
@@ -21,9 +24,10 @@ std::string process_input() {
         }
 
         command.append(buffer, buffer[n - 1] == '\n' ? n - 1 : n);
-        if (buffer[n - 1] == '\n') break; // read until '\n'
+        if (buffer[n - 1] == '\n') return command; // read until '\n'
     }
-
+    
+    done = true;
     return command;
 }
 
@@ -31,9 +35,14 @@ std::string process_input() {
 pid_t run_program(std::vector<std::string> const& program, int r_fd, int w_fd) {
 
     if (pid_t child_pid = fork()) { // parent
+       if (current_pgid == -1) current_pgid = child_pid;
+       setpgid(child_pid, current_pgid);
        return child_pid;
     }
     else { // child
+        if (current_pgid == -1) current_pgid = getpid();
+        setpgid(getpid(), current_pgid);
+
         dup2(r_fd, STDIN_FILENO);      
         dup2(w_fd, STDOUT_FILENO);
 
@@ -69,11 +78,8 @@ void run_cmd(std::vector<std::vector<std::string>> programs) {
 
 
     // wait all process to end
-    for (size_t i = 0; i != pids.size(); ++i) {
-        //puts("Now im waiting");
+    for (size_t i = 0; i != pids.size(); ++i) 
         waitpid(pids[i], NULL, 0);   
-        //puts("Waiting done");
-    }
 } 
 
 // pair<program, program_args>
@@ -97,13 +103,21 @@ std::vector<std::vector<std::string>> split_into_commands(std::string const& cmd
     return program_vec;
 }
 
+void sig_h(int sig) {
+    kill(-current_pgid, SIGINT);
+}
+
 int main(int argc, char** argv) {
-    //puts("hello im first");
-    while (true) {
-        write("$");
-        itd::string cmd = process_input();
-        std::vector<std::vector<std::string>> commands =  split_into_commands(cmd);
-   
+    // SIGINT handler
+    struct sigaction sa;
+    sa.sa_handler = &sig_h;
+    sigaction(SIGINT, &sa, NULL);
+
+    while (!done) {
+        write(STDOUT_FILENO, "$ ", 2);
+        std::string cmd = process_input();
+        std::vector<std::vector<std::string>> commands = split_into_commands(cmd);
+
         run_cmd(commands);
     }
 
